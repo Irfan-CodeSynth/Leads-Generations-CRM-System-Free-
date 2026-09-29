@@ -6,6 +6,7 @@
     "apps/*"
   ],
   "scripts": {
+    "db:dev": "node scripts/devdb.mjs 5432",
     "db:generate": "npm run db:generate -w @leads/db",
     "db:migrate": "npm run db:migrate -w @leads/db",
     "db:seed": "npm run db:seed -w @leads/db",

@@ -1,174 +1,180 @@
-# Maps Leads — Google Maps lead generation tool
+# Maps Leads & CRM — Automated B2B Lead Engine
 
-Scrapes Google Maps for businesses matching your keywords + cities, enriches each
-lead by visiting its website (emails + social profiles), and stores everything in
-a shared database you can browse on a map, tag with CRM statuses, and export to CSV.
+A full-stack lead generation system and modern B2B CRM. Scrapes Google Maps for targeted local businesses matching your keywords and locations, enriches each company with verified email addresses and social handles, deduplicates against a global ledger, and displays everything in an interactive dashboard with map visualizer and RFC4180 CSV export.
 
-**How it works**
+---
+
+## ⚡ Architecture Overview
 
 ```
-┌────────────   create job   ┌──────────────┐   claim + scrape   ┌───────────────┐
-│  apps/web  │ ─────────────▶ │   Postgres   │ ◀───────────────── │  apps/worker  │
-│ (Vercel UI)│ ◀── read ───── │ (Neon / PG)  │ ──── write ──────▶ │ (Render,      │
-└────────────   results      └──────────────┘                    │  Playwright)  │
-                                   ▲                              └───────────────┘
-                                   └──── jobs table is the queue ────┘
+┌─────────────────┐        1. Create Job        ┌────────────────────┐
+│    apps/web     │ ──────────────────────────▶ │      Postgres      │
+│ (Next.js 14 UI) │                             │   (Neon / PGlite)  │
+│                 │ ◀────────────────────────── │                    │
+└─────────────────┘       Read Leads & CRM      └────────────────────┘
+         │                                                ▲
+         │ (Wake ping to /health)                         │ 2. Claim & Scrape
+         ▼                                                │    (SKIP LOCKED)
+┌─────────────────┐                                       │
+│   apps/worker   │ ──────────────────────────────────────┘
+│ (Node/Playwright│
+│  + HTTP fetch)  │ ──▶ Scrapes Google Maps ──▶ Visits business websites
+└─────────────────┘
 ```
 
-- **`apps/web`** — Next.js 14 UI (deploy to Vercel). Auth, job creation, live job
-  list, map + CRM table, CSV export.
-- **`apps/worker`** — Node + Playwright (deploy to Render as a Docker web service).
-  Polls the `jobs` table, scrapes Google Maps, visits each website for emails/socials.
-- **`packages/db`** — shared Drizzle schema + client + migrations.
+- **`apps/web`** — Modern Next.js 14 App Router dashboard with responsive Left Sidebar, KPI metric cards, CRM pipeline funnel, interactive MapLibre GL map, and CSV exports.
+- **`apps/worker`** — Node + Playwright Chromium scraper service. Polls PostgreSQL using atomic `FOR UPDATE SKIP LOCKED` claims, scrapes Google Maps, and crawls business websites via lightweight HTTP fetch for emails and social handles.
+- **`packages/db`** — Shared PostgreSQL schema, migrations, and Drizzle ORM client.
+- **`scripts/devdb.mjs`** — Zero-install local Postgres database using PGlite (PostgreSQL compiled to WebAssembly with file persistence in `./data/pgdata`).
 
-The two apps never talk directly; the Postgres `jobs`/`leads` tables are the only
-integration point. This is why the scraper can't live on Vercel — Vercel serverless
-functions can't run a persistent headless browser, so it's a separate always-on worker.
+---
 
-> ⚠️ **Read before deploying.** Scraping Google Maps violates Google's Terms of
-> Service and is actively throttled. Expect occasional failed jobs (there is a
-> one-click Re-run). Keep volumes low. This is not a high-throughput or
-> long-term-guaranteed data source. For production-grade data use the official
-> Google Places API.
+## 🚀 Quickstart & Local Setup
 
-## Requirements
+Follow these steps to run the complete stack locally in under 2 minutes:
 
-- Node.js 18.18+ (20/22 recommended), npm 9+
-- A Postgres 14+ database (Neon free tier works)
+### 1. Prerequisites
+- **Node.js**: v18.18+ (Node 20 or 22 recommended)
+- **npm**: v9+
+- **Git**
 
-## Local development
-
+### 2. Clone the Repository
 ```bash
-# 1. Install everything (workspaces)
+git clone https://github.com/Irfan-CodeSynth/Leads-Generations-CRM-System-Free-.git
+cd Leads-Generations-CRM-System-Free-
+```
+
+### 3. Install Dependencies
+```bash
 npm install
-npx playwright install chromium          # one-time browser download for the worker
-
-# 2. Bring up a local Postgres
-#    Option A — you have Postgres/Docker: point DATABASE_URL at it
-#    Option B — no Postgres handy: use the bundled PGlite dev server
-npm i -D @electric-sql/pglite @electric-sql/pglite-socket   # already in devDeps
-node scripts/devdb.mjs 5432              # leaves a terminal running
-
-# 3. Configure environment
-cp .env.example .env                     # edit DATABASE_URL + secrets
-#    If using the PGlite dev server, also set in .env:
-#      POOL_MAX=1
-#      PIPELINE=1
-cp .env apps/web/.env.local              # Next.js only reads env inside apps/web
-
-# 4. Create tables + seed the team login
-npm run db:generate -w @leads/db
-npm run db:migrate    -w @leads/db
-npm run db:seed       -w @leads/db        # uses ADMIN_EMAIL / ADMIN_PASSWORD
-
-# 5. Run both apps (two terminals)
-npm run worker                            # terminal A
-npm run web                               # terminal B → http://localhost:3000
+npx playwright install chromium
 ```
 
-Log in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`, create a job (one keyword
-per line × one location per line), and watch leads appear.
+### 4. Configure Environment Files
 
-### Smoke-test the scraper without the UI or DB
-
+**macOS / Linux:**
 ```bash
-cd apps/worker
-npx tsx src/cli.ts "plumber" "Austin, TX" 5 enrich
+cp .env.example .env
+cp .env apps/web/.env.local
 ```
 
-## Configuration (env vars)
+**Windows (PowerShell):**
+```powershell
+Copy-Item .env.example .env
+Copy-Item .env apps/web/.env.local
+```
 
-| Var | Used by | Meaning |
-| --- | --- | --- |
-| `DATABASE_URL` | web, worker | Postgres connection string |
-| `SESSION_SECRET` | web | Long random string; signs the login cookie |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | db seed | The single team login |
-| `WORKER_URL` | web | Worker base URL, pinged to wake it after a job is created |
-| `POLL_INTERVAL_MS` | worker | How often to check for pending jobs (default 5000) |
-| `MAX_RESULTS` | worker | New businesses to collect per keyword x location search (Google's own cap is ~120) |
-| `POOL_MAX` / `PIPELINE` | web, worker | Set to `1` only for the PGlite dev server |
-| `PORT` | worker | Render injects this; health endpoint listens on it |
+*(The default `.env.example` is pre-configured to connect to the bundled zero-install local database).*
 
-## Deploy
+### 5. Start Local Database & Run Migrations
 
-### 1. Database — Neon (free)
-Create a project at [neon.tech](https://neon.tech), copy the **pooled** connection
-string. This is `DATABASE_URL` for both apps.
-
-### 2. Worker — Render (Docker)
-Push this repo to GitHub, then in Render choose **New → Blueprint** (it reads
-`render.yaml`) or **New → Web Service** with:
-- Environment: **Docker**, Image path / Dockerfile: `apps/worker/Dockerfile`, Build context: repo root
-- Plan: **Free** (512 MB — see caveats), Health check path: `/health`
-- Env vars: `DATABASE_URL`, `POLL_INTERVAL_MS`, optional `MAX_RESULTS`
-
-After deploy, note the service URL (e.g. `https://leads-worker.onrender.com`) —
-that becomes `WORKER_URL` in the web app.
-
-**Free-tier caveat:** Render free services sleep after ~15 min idle. The web app
-pings `WORKER_URL/health` right after you create a job to wake it, and you can add
-an external cron (e.g. UptimeRobot hitting `/health` every 10 min) to keep it warm.
-Chromium needs ~750 MB–1 GB to be reliable; on the 512 MB free instance expect
-occasional OOM job failures (the Re-run button recovers, and because the
-`known_places` ledger records every business ever scraped, a re-run skips what it
-already has and only pays for the gaps). Upgrading to a 1 GB instance removes most
-of this.
-
-### 3. Web — Vercel
-Import the repo in Vercel and set **Root Directory = `apps/web`**. Add env vars:
-`DATABASE_URL`, `SESSION_SECRET`, `WORKER_URL`. Deploy.
-
-### 4. Finalize
-Run migrations + seed against the production DB once (from your machine):
+Open a terminal and start the persistent local database:
 ```bash
-DATABASE_URL="<neon url>" npm run db:migrate -w @leads/db
-DATABASE_URL="<neon url>" ADMIN_EMAIL="you@team.com" ADMIN_PASSWORD="strong-pass" npm run db:seed -w @leads/db
+npm run db:dev
 ```
-Open the Vercel URL, log in, create a real job, and confirm leads appear.
+*(Leave this terminal running. It listens on `127.0.0.1:5432` and stores data in `./data/pgdata`).*
 
-## Tests
-
+In a second terminal, apply migrations and seed the initial admin account:
 ```bash
-npm test                     # both workspaces
-npm test -w @leads/worker    # parser, enrichment + ledger unit tests (no network)
-npm test -w @leads/web       # pagination helpers
+npm run db:migrate -w @leads/db
+npm run db:seed -w @leads/db
 ```
 
-## Interface
+### 6. Run the Worker & Web Dashboard
 
-Light and dark themes are CSS custom properties (`globals.css` tokens mapped in
-`tailwind.config.ts`), so a component never writes a `dark:` variant — the `.dark`
-block just redefines the variables. Animations are plain keyframes and all sit behind
-`prefers-reduced-motion`.
+In your terminal, start the worker and web app:
 
-Jobs paginate **server-side** at 10 per page via `?page=`, because that table grows with
-every run. Leads paginate **client-side** at 10 per page, deliberately: search, status
-filter, cross-page selection and Export-selected must keep spanning the whole job, and
-the map plots every pin regardless of page.
+**Terminal A (Scraper & Enrichment Worker):**
+```bash
+npm run worker
+```
 
-## Data model (packages/db/src/schema.ts)
+**Terminal B (Next.js Dashboard UI):**
+```bash
+npm run web
+```
 
-- `jobs` — keywords[], locations[], status `pending|running|done|error|cancelled`,
-  leadsFound, leadsSkipped, and the live progress fields the Jobs list polls:
-  `phase` (`scraping|enriching`), `phaseTotal`/`phaseDone` (enrichment walks one
-  website per lead, so it needs its own counter), and `cancelRequested` — set by the
-  Stop button and read by the worker at each yield point, including between scroll
-  rounds. Cancelling keeps every lead already committed.
-- `leads` — name, phone, address, website, category, rating, reviewCount, lat/lng,
-  mapsUrl, CRM status `new|contacted|replied|won|lost`, notes; unique (jobId, placeId)
-- `known_places` — global never-scrape-it-twice ledger: place_id PK, leadId, jobId.
-  Holds only Google feature ids (`0x…:0x…`), because the `name:…` fallback key is not
-  stable across cities. Deliberately a separate table rather than a unique index on
-  `leads.place_id`: leads must stay job-scoped for the UI, and pruning cross-job
-  duplicates would cascade into `lead_contacts` and destroy CRM notes.
-- `lead_contacts` — emails[], instagram, facebook, linkedin, twitter, youtube
-- `users` — the single seeded team account
+### 7. Open the App & Sign In
+Open [http://localhost:3000](http://localhost:3000) in your browser:
+- **Email**: `team@example.com`
+- **Password**: `devpassword`
+*(Or click **"Fill dev credentials"** on the login page).*
 
-## Notes on reliability
-- Scraper selectors are best-effort with fallbacks; a missing field is `null`, not a crash.
-- Jobs are claimed with `SELECT … FOR UPDATE SKIP LOCKED`, so running a second
-  worker replica is safe if you ever need throughput.
-- To reduce blocks: keep `MAX_RESULTS` modest, run fewer concurrent jobs, and (if
-  you scale) route Playwright through a residential proxy by editing `launchBrowser()`.
-- Repeat searches are the cheapest thing you can run: known places are recognised from
-  the results feed itself, so no detail page is ever opened for them.
+---
+
+## 🌟 Key Features
+
+1. **Executive Command Dashboard**:
+   - 6 Live animated KPI cards: Total Leads, Verified Emails, Enrichment Rate, Deduplication Ledger, Scrape Runs, and CRM Win Rate.
+   - Real-time CRM Pipeline Stage Funnel (`New` → `Contacted` → `Replied` → `Won` → `Lost`).
+   - Category distribution analysis and live recent activity feeds.
+
+2. **Left Sidebar Navigation**:
+   - Modern, collapsible sidebar with active glow pills, active job badges, and live worker health indicator.
+   - Responsive mobile drawer with touch backdrop.
+
+3. **Search Studio with Industry Presets**:
+   - 1-click presets for **Home Services**, **Healthcare**, and **Real Estate & Legal**.
+   - Live search multiplier calculator showing estimated lead yield.
+
+4. **Canonical Place Deduplication Ledger (`known_places`)**:
+   - Tracks Google place feature IDs (`0x...:0x...`).
+   - Repeat searches automatically skip previously captured businesses at zero network/browser cost.
+
+5. **Cooperative Stop & Resumability**:
+   - Click "Stop" at any time. Leads collected up to that point remain saved in the database.
+   - Re-running a job resumes enrichment where it left off without duplicate scraping.
+
+6. **Lead Management & Interactive Map**:
+   - Interactive MapLibre GL map with coordinate clustering and place popups.
+   - Zero-horizontal-scroll CRM table with inline status dropdown, notes, and 1-click email copy.
+   - Multi-select batch actions and RFC4180 CSV export.
+
+---
+
+## 🧪 Testing
+
+Run the full automated test suite (44 unit tests):
+```bash
+npm test
+```
+- Worker unit tests: Parser heuristics, email extraction, social links, deduplication ledger.
+- Web unit tests: Pagination slicing and range calculations.
+
+---
+
+## 🚢 Production Deployment
+
+### 1. Database (Neon - Free Tier)
+1. Create a PostgreSQL project on [neon.tech](https://neon.tech).
+2. Copy the pooled connection string into `DATABASE_URL` in both web and worker environments.
+
+### 2. Scraper Worker (Render - Docker)
+1. Connect your repository to [Render](https://render.com).
+2. Create a new **Web Service** with:
+   - **Environment**: Docker
+   - **Dockerfile Path**: `apps/worker/Dockerfile`
+   - **Build Context**: `.` (repo root)
+   - **Health Check Path**: `/health`
+   - **Environment Variables**: `DATABASE_URL`, `POLL_INTERVAL_MS=5000`, `MAX_RESULTS=100`
+3. Note the service URL (e.g. `https://leads-worker.onrender.com`) — this is your `WORKER_URL`.
+
+### 3. Web Dashboard (Vercel)
+1. Import the repository in [Vercel](https://vercel.com).
+2. Set **Root Directory** to `apps/web`.
+3. Add Environment Variables:
+   - `DATABASE_URL`: Your Neon connection string
+   - `SESSION_SECRET`: A long random secret string
+   - `WORKER_URL`: Your Render worker URL
+
+### 4. Run Migrations on Production
+From your local machine:
+```bash
+DATABASE_URL="<neon-url>" npm run db:migrate -w @leads/db
+DATABASE_URL="<neon-url>" ADMIN_EMAIL="admin@yourdomain.com" ADMIN_PASSWORD="your-strong-password" npm run db:seed -w @leads/db
+```
+
+---
+
+## 📄 License
+MIT
