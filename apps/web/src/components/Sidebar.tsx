@@ -122,7 +122,7 @@ export default function Sidebar({
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-accent-strong text-white shadow-accent">
               <Compass className="h-4 w-4" />
             </span>
-            <span className="text-sm font-bold tracking-tight text-ink">Maps Leads</span>
+            <span className="text-sm font-bold tracking-tight text-ink">WebCraft Leads Giant</span>
           </Link>
         </div>
 
@@ -157,7 +157,7 @@ export default function Sidebar({
               </span>
             </span>
             <div className="flex flex-col">
-              <span className="text-base font-bold tracking-tight text-ink">Maps Leads</span>
+              <span className="text-base font-bold tracking-tight text-ink">WebCraft Leads Giant</span>
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
                 B2B Lead Engine & CRM
               </span>
@@ -248,8 +248,8 @@ export default function Sidebar({
         <div className="border-t border-line/60 bg-surface/50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-accent to-accent-dark text-xs font-bold text-white shadow-sm">
-                ML
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-accent to-accent-dark text-[11px] font-bold text-white shadow-sm">
+                WLG
               </div>
               <div className="flex flex-col truncate">
                 <span className="truncate text-xs font-bold text-ink">Team Account</span>

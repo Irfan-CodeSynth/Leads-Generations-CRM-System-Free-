@@ -72,7 +72,7 @@ export default function LoginPage() {
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-ink">
-            Maps Leads
+            WebCraft Leads Giant
           </h1>
           <p className="mt-1 text-sm text-muted">
             Sign in to access your B2B lead generation & CRM pipeline.

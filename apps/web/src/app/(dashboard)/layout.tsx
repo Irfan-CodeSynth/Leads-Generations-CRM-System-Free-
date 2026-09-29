@@ -76,7 +76,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 px-5 sm:flex-row sm:px-8">
             <div className="flex items-center gap-2">
               <Sparkles className="h-3.5 w-3.5 text-accent" />
-              <span>Maps Leads &middot; Google Maps B2B Lead Generation & CRM</span>
+              <span>WebCraft Leads Giant &middot; Google Maps B2B Lead Generation & CRM</span>
             </div>
             <div>All leads deduplicated via Global Canonical Place Ledger</div>
           </div>

@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Maps Leads",
-  description: "Google Maps lead-generation tool",
+  title: "WebCraft Leads Giant",
+  description: "WebCraft Leads Giant - B2B Google Maps Lead Generation & CRM",
 };
 
 export const viewport: Viewport = { themeColor: "#4f46e5" };

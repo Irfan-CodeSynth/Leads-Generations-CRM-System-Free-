@@ -1,4 +1,4 @@
-# Maps Leads & CRM — Automated B2B Lead Engine
+# WebCraft Leads Giant — Automated B2B Lead Engine
 
 A full-stack lead generation system and modern B2B CRM. Scrapes Google Maps for targeted local businesses matching your keywords and locations, enriches each company with verified email addresses and social handles, deduplicates against a global ledger, and displays everything in an interactive dashboard with map visualizer and RFC4180 CSV export.
 
