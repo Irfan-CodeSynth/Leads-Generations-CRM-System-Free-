@@ -1,0 +1,20 @@
+# Render blueprint for the scraping worker.
+# Create a Neon Postgres first, then in Render → New → Blueprint, point at this
+# repo. Render reads DATABASE_URL from the dashboard (set it as env var).
+services:
+  - type: web
+    name: leads-worker
+    env: docker
+    plan: free
+    dockerfilePath: ./apps/worker/Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false # paste your Neon connection string
+      - key: POLL_INTERVAL_MS
+        value: "5000"
+      # New businesses collected per keyword x location search.
+      # Google's own feed stops at ~120, so higher has no effect.
+      - key: MAX_RESULTS
+        value: "100"

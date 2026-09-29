@@ -1,0 +1,20 @@
+{
+  "name": "maps-leads",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "db:generate": "npm run db:generate -w @leads/db",
+    "db:migrate": "npm run db:migrate -w @leads/db",
+    "db:seed": "npm run db:seed -w @leads/db",
+    "worker": "npm run dev -w @leads/worker",
+    "web": "npm run dev -w @leads/web",
+    "test": "npm run test -w @leads/worker && npm run test -w @leads/web"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-socket": "^0.2.11"
+  }
+}
