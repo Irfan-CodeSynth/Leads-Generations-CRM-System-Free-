@@ -120,6 +120,9 @@ Open [http://localhost:3000](http://localhost:3000) in your browser:
 4. **Canonical Place Deduplication Ledger (`known_places`)**:
    - Tracks Google place feature IDs (`0x...:0x...`).
    - Repeat searches automatically skip previously captured businesses at zero network/browser cost.
+   - The ledger means *places you currently hold*. Deleting a job or a lead releases the places
+     nothing else keeps, so a later search can collect them again; a place another run still holds
+     stays in the ledger. Deleting a `pending` or `running` job is refused until you stop it.
 
 5. **Cooperative Stop & Resumability**:
    - Click "Stop" at any time. Leads collected up to that point remain saved in the database.
@@ -129,17 +132,20 @@ Open [http://localhost:3000](http://localhost:3000) in your browser:
    - Interactive MapLibre GL map with coordinate clustering and place popups.
    - Zero-horizontal-scroll CRM table with inline status dropdown, notes, and 1-click email copy.
    - Multi-select batch actions and RFC4180 CSV export.
+   - Delete a single lead or job, or tick several and delete the batch. Deleting a job takes its
+     leads and captured contacts with it and releases any business no other run still holds, so a
+     later search can collect it again. Running jobs must be stopped first.
 
 ---
 
 ## 🧪 Testing
 
-Run the full automated test suite (44 unit tests):
+Run the full automated test suite (60 unit tests):
 ```bash
 npm test
 ```
-- Worker unit tests: Parser heuristics, email extraction, social links, deduplication ledger.
-- Web unit tests: Pagination slicing and range calculations.
+- Worker unit tests: Parser heuristics, email extraction, social links, deduplication ledger, cascade and ledger-release rules for deletes.
+- Web unit tests: Pagination slicing and range calculations, delete-batch id validation.
 
 ---
 

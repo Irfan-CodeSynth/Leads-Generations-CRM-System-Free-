@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/format";
 import { PAGE_SIZE, rangeText } from "@/lib/pagination";
 import { statusBadge } from "@/lib/jobStatus";
 import Pagination from "@/components/Pagination";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import {
   Layers,
   Search,
@@ -17,6 +18,7 @@ import {
   Sparkles,
   AlertCircle,
   Plus,
+  Trash2,
 } from "lucide-react";
 
 const ACTIVE = new Set(["pending", "running"]);
@@ -80,13 +82,17 @@ export default function JobsList({
   const [error, setError] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  /** Job ids awaiting confirmation, or null when the dialog is closed. */
+  const [target, setTarget] = useState<number[] | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const pageRef = useRef(page);
   pageRef.current = page;
 
-  const refresh = useCallback(async (target = pageRef.current) => {
+  const refresh = useCallback(async (pageNo = pageRef.current) => {
     try {
-      const res = await fetch(`/api/jobs/list?page=${target}`, { cache: "no-store" });
+      const res = await fetch(`/api/jobs/list?page=${pageNo}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = (await res.json()) as {
         jobs: JobSummary[];
@@ -98,6 +104,13 @@ export default function JobsList({
       setTotal(data.total);
       setPageCount(data.pageCount);
       setPage(data.page);
+      // A job can vanish between polls (deleted elsewhere); stale ticks would
+      // otherwise ride into the next batch.
+      setSelected((prev) => {
+        const here = new Set(data.jobs.map((j) => j.id));
+        const next = new Set([...prev].filter((id) => here.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
       setError(null);
     } catch {
       setError("Live updates paused: cannot reach the server");
@@ -139,6 +152,48 @@ export default function JobsList({
       );
     });
   }, [rows, filterStatus, search]);
+
+  // Active jobs are ticked out of the batch on purpose: the server rejects a
+  // batch containing one, so a tick that can never delete is a false promise.
+  const deletableIds = useMemo(
+    () => filteredRows.filter((j) => !ACTIVE.has(j.status)).map((j) => j.id),
+    [filteredRows],
+  );
+  const allDeletableSelected =
+    deletableIds.length > 0 && deletableIds.every((id) => selected.has(id));
+
+  function toggle(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) =>
+      allDeletableSelected ? new Set() : new Set([...prev, ...deletableIds]),
+    );
+  }
+
+  async function deleteNow(ids: number[]) {
+    setBusy(true);
+    const res = await fetch("/api/jobs/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).catch(() => null);
+    const data = (await res?.json().catch(() => null)) as { error?: string } | null;
+    setBusy(false);
+    if (!res || !res.ok) {
+      setError(data?.error ?? "Delete failed: the server could not be reached");
+      return;
+    }
+    setError(null);
+    setSelected(new Set());
+    setTarget(null);
+    await refresh();
+  }
 
   if (total === 0) {
     return (
@@ -207,6 +262,33 @@ export default function JobsList({
         </div>
       )}
 
+      {/* Batch Selection Banner */}
+      {selected.size > 0 && (
+        <div className="animate-fade-in flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-bad-fg/25 bg-bad-bg/40 px-4 py-2.5 text-xs">
+          <div className="flex items-center gap-2 font-semibold text-bad-fg">
+            <Trash2 className="h-4 w-4" />
+            <span>
+              {selected.size} job{selected.size === 1 ? "" : "s"} selected
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSelected(new Set())}
+              className="rounded-lg border border-line bg-surface px-2.5 py-1 font-medium text-muted transition hover:text-ink active:scale-95"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setTarget([...selected])}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-bad-fg px-3 py-1 font-semibold text-page transition hover:opacity-90 active:scale-95"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete selected
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Modern Table Container */}
       <div
         key={page}
@@ -216,6 +298,15 @@ export default function JobsList({
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="border-b border-line bg-surface2/70 text-[11px] font-semibold uppercase tracking-wider text-soft">
               <tr>
+                <th className="w-9 px-5 py-3.5">
+                  <input
+                    type="checkbox"
+                    checked={allDeletableSelected}
+                    onChange={toggleAll}
+                    disabled={deletableIds.length === 0}
+                    aria-label="Select all deletable jobs on this page"
+                  />
+                </th>
                 <th className="px-5 py-3.5">Job ID</th>
                 <th className="px-5 py-3.5">Keywords × Locations</th>
                 <th className="px-5 py-3.5">Status & Phase</th>
@@ -228,7 +319,7 @@ export default function JobsList({
             <tbody className="divide-y divide-line/60">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-sm text-muted">
+                  <td colSpan={8} className="px-5 py-10 text-center text-sm text-muted">
                     No jobs match your search or filter.
                   </td>
                 </tr>
@@ -239,6 +330,16 @@ export default function JobsList({
                     className="row-in transition-colors hover:bg-surface2/50"
                     style={{ animationDelay: `${Math.min(i, 9) * 25}ms` }}
                   >
+                    <td className="px-5 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(j.id)}
+                        onChange={() => toggle(j.id)}
+                        disabled={ACTIVE.has(j.status)}
+                        title={ACTIVE.has(j.status) ? "Stop this job before deleting it" : undefined}
+                        aria-label={`Select job ${j.id}`}
+                      />
+                    </td>
                     <td className="px-5 py-4 font-mono text-xs font-semibold text-soft">
                       #{j.id}
                     </td>
@@ -304,6 +405,18 @@ export default function JobsList({
                             Re-run
                           </button>
                         )}
+                        <button
+                          onClick={() => setTarget([j.id])}
+                          disabled={ACTIVE.has(j.status)}
+                          title={
+                            ACTIVE.has(j.status)
+                              ? "Stop this job before deleting it"
+                              : "Delete this job and its leads"
+                          }
+                          className="inline-flex items-center justify-center rounded-xl border border-line p-1.5 text-muted transition hover:border-bad-fg hover:text-bad-fg active:scale-95 disabled:opacity-40 disabled:hover:border-line disabled:hover:text-muted"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -321,6 +434,20 @@ export default function JobsList({
         </p>
         <Pagination page={page} pageCount={pageCount} onChange={go} noun="pages" />
       </div>
+
+      <ConfirmDialog
+        open={target !== null}
+        title={`Delete ${target?.length ?? 0} job${target?.length === 1 ? "" : "s"}?`}
+        body={
+          target?.length === 1
+            ? "Every lead this run collected goes with it, and any business no other run holds is released from the ledger — a later search can collect it again."
+            : "Every lead these runs collected goes with them, and any business no other run holds is released from the ledger — a later search can collect it again."
+        }
+        confirmLabel={`Delete job${target?.length === 1 ? "" : "s"}`}
+        busy={busy}
+        onConfirm={() => target && void deleteNow(target)}
+        onCancel={() => setTarget(null)}
+      />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema.js";
 
 export * from "./schema.js";
+export * from "./delete.js";
 
 export function makeDb(databaseUrl: string) {
   // POOL_MAX/PIPELINE are lowered (to 1) for the in-process PGlite dev DB,

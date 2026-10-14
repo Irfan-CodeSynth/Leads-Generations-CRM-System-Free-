@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { LeadRow } from "@/lib/types";
 import { PAGE_SIZE, rangeText, slicePage, totalPages } from "@/lib/pagination";
 import Pagination from "@/components/Pagination";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import {
   Search,
   Download,
@@ -17,6 +18,8 @@ import {
   CheckCircle2,
   X,
   FileText,
+  Trash2,
+  AlertCircle,
 } from "lucide-react";
 
 const LEAD_STATUSES = ["new", "contacted", "replied", "won", "lost"];
@@ -55,6 +58,10 @@ export default function LeadsTable({
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+  /** Lead ids awaiting confirmation, or null when the dialog is closed. */
+  const [pending, setPending] = useState<number[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Status counts
   const statusCounts = useMemo(() => {
@@ -143,6 +150,34 @@ export default function LeadsTable({
     const params = new URLSearchParams({ jobId: String(jobId) });
     if (ids.length) params.set("ids", ids.join(","));
     window.location.href = `/api/export?${params.toString()}`;
+  }
+
+  /**
+   * Optimistic like a status change: the rows vanish at once and come back in
+   * their original order if the request fails.
+   */
+  async function removeLeads(ids: number[]) {
+    const doomed = new Set(ids);
+    const before = data;
+    setData((prev) => prev.filter((l) => !doomed.has(l.id)));
+    setSelected((prev) => new Set([...prev].filter((id) => !doomed.has(id))));
+    setPending(null);
+    setBusy(true);
+
+    const res = await fetch("/api/leads/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).catch(() => null);
+    const body = (await res?.json().catch(() => null)) as { error?: string } | null;
+    setBusy(false);
+
+    if (!res || !res.ok) {
+      setData(before);
+      setDeleteError(body?.error ?? "Delete failed: the server could not be reached");
+      return;
+    }
+    setDeleteError(null);
   }
 
   function copyToClipboard(text: string) {
@@ -253,7 +288,21 @@ export default function LeadsTable({
               <Download className="h-3 w-3" />
               Export Selected
             </button>
+            <button
+              onClick={() => setPending([...selected])}
+              className="inline-flex items-center gap-1 rounded-lg bg-bad-fg px-3 py-1 font-semibold text-page transition hover:opacity-90 active:scale-95"
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete Selected
+            </button>
           </div>
+        </div>
+      )}
+
+      {deleteError && (
+        <div className="animate-fade-in flex items-center gap-2 rounded-xl border border-warn-bg bg-warn-bg/40 p-3 text-xs text-warn-fg">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {deleteError}
         </div>
       )}
 
@@ -294,12 +343,15 @@ export default function LeadsTable({
                       aria-label="Select all matching leads"
                     />
                   </th>
-                  <th className="py-3 px-3.5 w-[30%]">Business</th>
-                  <th className="py-3 px-3.5 w-[18%]">Contact & Web</th>
-                  <th className="py-3 px-3 w-[12%]">Rating</th>
+                  <th className="py-3 px-3.5 w-[26%]">Business</th>
+                  <th className="py-3 px-3.5 w-[17%]">Contact & Web</th>
+                  <th className="py-3 px-3 w-[10%]">Rating</th>
                   <th className="py-3 px-3.5 w-[16%]">Verified Outreach</th>
                   <th className="py-3 px-3 w-[11%]">CRM Status</th>
                   <th className="py-3 px-3.5 w-[13%]">Notes</th>
+                  <th className="py-3 px-2 w-[4%] text-right">
+                    <span className="sr-only">Delete</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line/60">
@@ -468,6 +520,17 @@ export default function LeadsTable({
                           />
                         </div>
                       </td>
+
+                      {/* Delete */}
+                      <td className="py-3 px-2 text-right">
+                        <button
+                          onClick={() => setPending([l.id])}
+                          title="Delete this lead"
+                          className="rounded-lg border border-line p-1.5 text-muted transition hover:border-bad-fg hover:text-bad-fg active:scale-95"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -483,6 +546,16 @@ export default function LeadsTable({
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={pending !== null}
+        title={`Delete ${pending?.length ?? 0} lead${pending?.length === 1 ? "" : "s"}?`}
+        body="Their outreach notes and captured contacts go with them. Any business no other run holds is released from the ledger, so a later search can collect it again."
+        confirmLabel={`Delete lead${pending?.length === 1 ? "" : "s"}`}
+        busy={busy}
+        onConfirm={() => pending && void removeLeads(pending)}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }
